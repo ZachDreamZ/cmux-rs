@@ -32,3 +32,57 @@ where
 {
     Arc::new(f)
 }
+
+/// Combinator: match only if **both** matchers match.
+///
+/// # Example
+///
+/// ```
+/// use cmux_rs::matcher::{from_fn, and};
+///
+/// let long = from_fn(|p| p.len() > 4);
+/// let http = from_fn(|p| p.starts_with(b"GET "));
+/// let m = and(long, http);
+/// assert!(m(b"GET /index.html"));
+/// assert!(!m(b"GET "));
+/// ```
+#[must_use]
+pub fn and(left: Matcher, right: Matcher) -> Matcher {
+    Arc::new(move |peek| left(peek) && right(peek))
+}
+
+/// Combinator: match if **either** matcher matches.
+///
+/// # Example
+///
+/// ```
+/// use cmux_rs::matcher::{from_fn, or};
+///
+/// let get = from_fn(|p| p.starts_with(b"GET "));
+/// let post = from_fn(|p| p.starts_with(b"POST "));
+/// let m = or(get, post);
+/// assert!(m(b"GET /"));
+/// assert!(m(b"POST /"));
+/// assert!(!m(b"PUT /"));
+/// ```
+#[must_use]
+pub fn or(left: Matcher, right: Matcher) -> Matcher {
+    Arc::new(move |peek| left(peek) || right(peek))
+}
+
+/// Combinator: match if the inner matcher does **not** match.
+///
+/// # Example
+///
+/// ```
+/// use cmux_rs::matcher::{from_fn, not};
+///
+/// let tls = from_fn(|p| p.starts_with(&[0x16, 0x03]));
+/// let plaintext = not(tls);
+/// assert!(plaintext(b"GET /"));
+/// assert!(!plaintext(&[0x16, 0x03, 0x01]));
+/// ```
+#[must_use]
+pub fn not(inner: Matcher) -> Matcher {
+    Arc::new(move |peek| !inner(peek))
+}
