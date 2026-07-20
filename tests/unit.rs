@@ -1,4 +1,4 @@
-use cmux_rs::matchers::{any, grpc, http1_fast, sni, ssh, tls};
+use cmux_rs::matchers::{any, db, grpc, http1_fast, sni, ssh, tls};
 use std::sync::Arc;
 
 /// Build a minimal TLS 1.2 ClientHello requesting `sni` as the host name.
@@ -141,4 +141,50 @@ fn sni_handles_unparseable() {
     let truncated = [0x16, 0x03, 0x03, 0x00, 0x05, 0x01, 0x00, 0x00, 0x01, 0x00];
     let m = sni(Arc::new(|_: &str| true));
     assert!(!m(&truncated));
+}
+
+#[test]
+fn redis_matches_resp_array() {
+    let m = db::redis();
+    assert!(m(b"*1\r\n$4\r\nPING\r\n"));
+}
+
+#[test]
+fn redis_matches_verbose_command() {
+    let m = db::redis();
+    assert!(m(b"PING\r\n"));
+    assert!(m(b"set foo bar\r\n")); // case-insensitive verb
+    assert!(m(b"  AUTH mypass\r\n"));
+}
+
+#[test]
+fn redis_rejects_non_redis() {
+    let m = db::redis();
+    assert!(!m(b"GET / HTTP/1.1"));
+}
+
+#[test]
+fn postgres_matches_startup() {
+    let m = db::postgres();
+    let mut pkt = [0u8; 8];
+    pkt[4..8].copy_from_slice(&[0x00, 0x03, 0x00, 0x00]);
+    assert!(m(&pkt));
+}
+
+#[test]
+fn postgres_rejects_other() {
+    let m = db::postgres();
+    assert!(!m(b"GET / HTTP/1.1"));
+}
+
+#[test]
+fn mysql_matches_greeting() {
+    let m = db::mysql();
+    assert!(m(&[0x0a, b'5', b'.', b'7']));
+}
+
+#[test]
+fn mysql_rejects_other() {
+    let m = db::mysql();
+    assert!(!m(b"GET / HTTP/1.1"));
 }
