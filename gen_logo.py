@@ -2,10 +2,10 @@ from PIL import Image, ImageDraw, ImageFont
 import math
 
 W, H = 1024, 1024
-img = Image.new("RGBA", (W, H), (15, 18, 28, 255))
+BG = (15, 18, 28, 255)
+img = Image.new("RGBA", (W, H), BG)
 d = ImageDraw.Draw(img)
 
-BG = (15, 18, 28)
 PORT_FILL = (88, 166, 255)
 PORT_RING = (173, 216, 230)
 PROTO = [
@@ -17,13 +17,8 @@ PROTO = [
 
 
 def font(size, bold=True):
-    candidates = [
-        "C:/Windows/Fonts/seguiemj.ttf",
-        "C:/Windows/Fonts/arialbd.ttf",
-        "C:/Windows/Fonts/arial.ttf",
-        "C:/Windows/Fonts/DejaVuSans-Bold.ttf",
-    ]
-    for c in candidates:
+    for c in ["C:/Windows/Fonts/arialbd.ttf", "C:/Windows/Fonts/arial.ttf",
+              "C:/Windows/Fonts/DejaVuSans-Bold.ttf"]:
         try:
             return ImageFont.truetype(c, size)
         except Exception:
@@ -31,52 +26,46 @@ def font(size, bold=True):
     return ImageFont.load_default()
 
 
-cx, cy = W // 2, H // 2
-port_r = 120
+def text(d, s, x, y, f, fill):
+    w = d.textlength(s, font=f)
+    d.text((x - w / 2, y), s, font=f, fill=fill)
 
-# glow behind port
-for r, a in [(port_r + 60, 40), (port_r + 30, 70)]:
+
+cx, cy = W // 2, H // 2 + 20
+port_r = 118
+
+# soft glow behind the port node
+for r, a in [(port_r + 70, 28), (port_r + 38, 55)]:
     d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(88, 166, 255, a))
 
 # central port node
 d.ellipse([cx - port_r, cy - port_r, cx + port_r, cy + port_r],
           fill=PORT_FILL, outline=PORT_RING, width=8)
+text(d, "cmux", cx, cy - 40, font(62), (10, 14, 22, 255))
 
-# port label
-pf = font(64)
-pw = d.textlength("cmux", font=pf)
-d.text((cx - pw / 2, cy - 38), "cmux", font=pf, fill=(10, 14, 22, 255))
-
-# branches
+# fan of protocol streams
 n = len(PROTO)
 for i, (label, color) in enumerate(PROTO):
-    ang = -90 + (i - (n - 1) / 2) * 46
+    ang = -90 + (i - (n - 1) / 2) * 44
     rad = math.radians(ang)
-    # line from port edge outward
-    x1 = cx + math.cos(rad) * (port_r - 6)
-    y1 = cy + math.sin(rad) * (port_r - 6)
+    x1 = cx + math.cos(rad) * (port_r - 4)
+    y1 = cy + math.sin(rad) * (port_r - 4)
     length = 250
-    x2 = cx + math.cos(rad) * (port_r + length)
-    y2 = cy + math.sin(rad) * (port_r + length)
+    nx = cx + math.cos(rad) * (port_r + length)
+    ny = cy + math.sin(rad) * (port_r + length)
+    node_r = 66
+    # connecting line
+    d.line([x1, y1, nx, ny], fill=color, width=11)
     # protocol node
-    node_r = 64
-    nx, ny = x2, y2
-    d.line([x1, y1, nx, ny], fill=color, width=10)
     d.ellipse([nx - node_r, ny - node_r, nx + node_r, ny + node_r],
-              fill=color, outline=(255, 255, 255, 120), width=3)
-    lf = font(34)
-    tw = d.textlength(label, font=lf)
-    d.text((nx - tw / 2, ny - 22), label, font=lf, fill=(15, 18, 28, 255))
+              fill=color, outline=(255, 255, 255, 130), width=3)
+    text(d, label, nx, ny - 21, font(32), (15, 18, 28, 255))
+    # small dot where the line meets the port for polish
+    d.ellipse([x1 - 5, y1 - 5, x1 + 5, y1 + 5], fill=color)
 
-# title
-tf = font(54, bold=True)
-title = "cmux-rs"
-tw = d.textlength(title, font=tf)
-d.text((cx - tw / 2, 60), title, font=tf, fill=(220, 230, 245, 255))
-sf = font(30)
-sub = "Connection Multiplexer"
-sw = d.textlength(sub, font=sf)
-d.text((cx - sw / 2, 128), sub, font=sf, fill=(140, 160, 185, 255))
+# title + subtitle
+text(d, "cmux-rs", cx, 70, font(58, True), (220, 230, 245, 255))
+text(d, "Connection Multiplexer", cx, 142, font(30), (140, 160, 185, 255))
 
 img.save("assets/logo.png")
 print("logo written")
