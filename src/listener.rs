@@ -7,6 +7,7 @@ pub struct MatchedListener {
 }
 
 impl MatchedListener {
+    #[must_use]
     pub fn new(rx: mpsc::UnboundedReceiver<BufferedStream>) -> Self {
         MatchedListener { rx }
     }

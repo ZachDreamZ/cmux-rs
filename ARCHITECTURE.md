@@ -72,9 +72,11 @@ registration; the **first** one that returns `true` wins.
 | -------------- | --------------------------------------------- |
 | `http1_fast`   | HTTP method (`GET `, `POST `, ...)            |
 | `tls`          | TLS handshake record (`0x16 0x03 0xNN`)      |
+| `sni(pred)`    | TLS `ClientHello` Server Name (route by host) |
 | `ssh`          | `SSH-` identification string                  |
 | `http2` / `grpc` | HTTP/2 preface / `content-type: application/grpc` |
 | `any`          | catch-all (always matches)                    |
+| `from_fn(f)`   | your own `fn(&[u8]) -> bool` detector         |
 
 ### 4. Dispatch
 
@@ -100,8 +102,15 @@ pub struct Cmux {
     listener: TcpListener,
     matchers: Vec<(Matcher, mpsc::UnboundedSender<BufferedStream>)>,
     peek_len: usize,
+    shutdown_rx: watch::Receiver<bool>,
+    shutdown_tx: watch::Sender<bool>,
 }
 ```
+
+`serve()` selects on the listener's `accept()` and a shutdown `watch` channel,
+so it can be stopped gracefully via a [`Shutdown`](crate::Shutdown) handle
+obtained from `shutdown_handle()`. Transient `accept()` errors are logged and
+retried rather than terminating the whole multiplexer.
 
 The builder-style entry point:
 
@@ -161,6 +170,38 @@ impl MatchedListener {
 
 One virtual listener per matcher. Hand your app a `MatchedListener` and call
 `accept()` in a loop (typically inside `tokio::spawn`).
+
+### `Shutdown`
+
+```rust
+#[derive(Clone)]
+pub struct Shutdown {
+    tx: watch::Sender<bool>,
+}
+impl Shutdown {
+    pub fn signal(&self) { /* ... */ }
+}
+```
+
+A cloneable handle returned by `Cmux::shutdown_handle()`. Calling `signal()`
+causes `serve()` to return `Ok(())` once the in-flight `accept()` resolves, so
+the multiplexer stops accepting new connections without killing the process.
+
+### `Error`
+
+`serve()` returns `Result<(), Error>` where `Error` is:
+
+```rust
+pub enum Error {
+    Accept(tokio::io::Error), // a fatal listener error
+    NotMatched,               // (reserved) no matcher matched
+    Shutdown,                 // (reserved) shut down before dispatch
+}
+```
+
+Currently `serve()` only resolves with `Ok(())` (graceful shutdown) or
+`Error::Accept` (unrecoverable listener failure). `NotMatched` and `Shutdown`
+are reserved for future fine-grained reporting.
 
 ---
 

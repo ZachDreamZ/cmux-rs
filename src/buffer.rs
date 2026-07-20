@@ -26,8 +26,10 @@ impl BufferedStream {
         }
     }
 
+    /// Returns the bytes that have been peeked but **not yet consumed** by a
+    /// read. After reads, this shrinks to only the remaining prefix.
     pub fn peek(&self) -> &[u8] {
-        &self.prefix
+        &self.prefix[self.prefix_pos..]
     }
 
     pub fn inner(&self) -> &TcpStream {
