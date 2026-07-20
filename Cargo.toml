@@ -12,10 +12,10 @@ categories = ["network"]
 [dependencies]
 tokio = { version = "1", features = ["net", "io-util", "sync", "macros", "rt", "time"] }
 bytes = "1"
+tracing = "0.1"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
-tracing = "0.1"
 tracing-subscriber = "0.3"
 
 [[example]]

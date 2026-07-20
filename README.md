@@ -127,10 +127,12 @@ registration order, and the **first** match wins.
 | ---------------- | ------------------------------------------------ |
 | `http1_fast()`   | HTTP/1.x methods (`GET `, `POST `, ...)          |
 | `tls()`          | TLS handshake record (`0x16 0x03 0xNN`)          |
+| `sni(pred)`      | TLS `ClientHello` Server Name (e.g. route by host) |
 | `ssh()`          | `SSH-` identification string                     |
 | `http2()`        | HTTP/2 connection preface                        |
 | `grpc()`         | HTTP/2 preface or `content-type: application/grpc` |
 | `any()`          | catch-all — always matches (use last)            |
+| `from_fn(f)`     | your own `fn(&[u8]) -> bool` detector            |
 
 ### Custom matchers
 
@@ -149,6 +151,35 @@ async fn main() -> std::io::Result<()> {
     let (mux, _my_l) = Cmux::new(listener).match_fn(my_proto);
     mux.serve().await
 }
+```
+
+---
+
+## Graceful Shutdown
+
+`serve()` runs until the listener is closed. To stop it on demand, grab a
+[`Shutdown`](https://docs.rs/cmux-rs) handle and signal it:
+
+```rust
+let (mux, _http_l) = Cmux::new(listener).match_fn(http1_fast());
+let shutdown = mux.shutdown_handle();
+tokio::spawn(async move { mux.serve().await });
+
+// ... later, from a signal handler or ctrl-c:
+shutdown.signal(); // serve() returns Ok(()) once the current accept resolves
+```
+
+## Routing TLS by SNI
+
+Route different host names to different backends without terminating TLS at
+the multiplexer:
+
+```rust
+use std::sync::Arc;
+use cmux_rs::matchers::sni;
+
+let api = sni(Arc::new(|name: &str| name == "api.example.com"));
+let web = sni(Arc::new(|name: &str| name == "web.example.com"));
 ```
 
 ---

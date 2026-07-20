@@ -1,4 +1,56 @@
-use cmux_rs::matchers::{any, grpc, http1_fast, ssh, tls};
+use cmux_rs::matchers::{any, grpc, http1_fast, sni, ssh, tls};
+use std::sync::Arc;
+
+/// Build a minimal TLS 1.2 ClientHello requesting `sni` as the host name.
+fn client_hello(sni: &str) -> Vec<u8> {
+    let name_bytes = sni.as_bytes();
+    let mut body = Vec::new();
+    body.extend_from_slice(&[0x03, 0x03]); // client version
+    body.extend_from_slice(&[0u8; 32]); // random
+    body.push(0x00); // session id length 0
+    body.extend_from_slice(&[0x00, 0x02]); // cipher suites length
+    body.extend_from_slice(&[0x13, 0x01]); // one suite
+    body.push(0x01); // compression methods length
+    body.push(0x00); // null compression
+
+    // SNI extension
+    let mut sni_ext = Vec::new();
+    sni_ext.extend_from_slice(&[0x00, 0x00]); // type SNI
+    let sni_inner_len = 2 + 1 + 2 + name_bytes.len();
+    let sni_ext_len = 2 + sni_inner_len;
+    sni_ext.extend_from_slice(&(sni_ext_len as u16).to_be_bytes());
+    sni_ext.extend_from_slice(&(sni_inner_len as u16).to_be_bytes()); // server_name_list length
+    sni_ext.push(0x00); // name_type = host_name
+    sni_ext.extend_from_slice(&(name_bytes.len() as u16).to_be_bytes());
+    sni_ext.extend_from_slice(name_bytes);
+
+    let mut exts = Vec::new();
+    exts.extend_from_slice(&(sni_ext.len() as u16).to_be_bytes());
+    exts.extend_from_slice(&sni_ext);
+
+    // ClientHello handshake body
+    let mut ch = Vec::new();
+    ch.extend_from_slice(&body);
+    ch.extend_from_slice(&exts);
+
+    // Handshake header: type ClientHello(0x01) + 24-bit length
+    let mut handshake = Vec::new();
+    handshake.push(0x01);
+    handshake.extend_from_slice(&[
+        (ch.len() >> 16) as u8,
+        (ch.len() >> 8) as u8,
+        ch.len() as u8,
+    ]);
+    handshake.extend_from_slice(&ch);
+
+    // Record header: type handshake(0x16) + version(0x03 0x03) + 16-bit length
+    let mut record = Vec::new();
+    record.push(0x16);
+    record.extend_from_slice(&[0x03, 0x03]);
+    record.extend_from_slice(&(handshake.len() as u16).to_be_bytes());
+    record.extend_from_slice(&handshake);
+    record
+}
 
 #[test]
 fn http1_fast_matches_methods() {
@@ -65,4 +117,28 @@ fn any_matches_everything() {
     assert!(any()(b""));
     assert!(any()(b"anything at all"));
     assert!(any()(&[0u8; 64]));
+}
+
+#[test]
+fn sni_matches_by_name() {
+    let ch = client_hello("api.example.com");
+    let m = sni(Arc::new(|n: &str| n == "api.example.com"));
+    assert!(m(&ch));
+
+    let m_other = sni(Arc::new(|n: &str| n == "other.com"));
+    assert!(!m_other(&ch));
+}
+
+#[test]
+fn sni_rejects_non_tls() {
+    let m = sni(Arc::new(|_: &str| true));
+    assert!(!m(b"GET / HTTP"));
+}
+
+#[test]
+fn sni_handles_unparseable() {
+    // TLS record but truncated ClientHello (no extensions).
+    let truncated = [0x16, 0x03, 0x03, 0x00, 0x05, 0x01, 0x00, 0x00, 0x01, 0x00];
+    let m = sni(Arc::new(|_: &str| true));
+    assert!(!m(&truncated));
 }
